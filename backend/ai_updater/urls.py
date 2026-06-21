@@ -1,7 +1,7 @@
 from django.urls import path
 
-from ai_updater import views
+from ai_updater.views import AIResumeUpdateView
 
 urlpatterns = [
-    path("update-resume/", views.update_resume, name="ai-update-resume"),
+    path("update/", AIResumeUpdateView.as_view(), name="ai-resume-update"),
 ]
