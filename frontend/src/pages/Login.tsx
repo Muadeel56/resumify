@@ -1,21 +1,39 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import InputField from '../components/InputField';
+import { useAuthStore } from '../store/authStore';
+import { getApiErrorMessage } from '../utils/api';
 
 const Login = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const login = useAuthStore((state) => state.login);
+
   const [formData, setFormData] = useState({
-    email: '',
+    username: '',
     password: '',
   });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const from = (location.state as { from?: string } | null)?.from ?? '/builder';
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement login logic
-    console.log('Login:', formData);
+    setError('');
+    setLoading(true);
+    try {
+      await login(formData.username, formData.password);
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Invalid username or password.'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -27,14 +45,16 @@ const Login = () => {
           </h2>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {error && (
+            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          )}
           <div className="rounded-md shadow-sm -space-y-px">
             <InputField
-              label="Email"
-              name="email"
-              type="email"
-              value={formData.email}
+              label="Username"
+              name="username"
+              value={formData.username}
               onChange={handleChange}
-              placeholder="you@example.com"
+              placeholder="johndoe"
               required
             />
             <InputField
@@ -51,9 +71,10 @@ const Login = () => {
           <div>
             <button
               type="submit"
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={loading}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              Sign in
+              {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
 
@@ -72,4 +93,3 @@ const Login = () => {
 };
 
 export default Login;
-

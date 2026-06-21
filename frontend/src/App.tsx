@@ -1,6 +1,9 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
+import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './components/ThemeProvider';
+import { useAuthStore } from './store/authStore';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -8,6 +11,12 @@ import ResumeBuilder from './pages/ResumeBuilder';
 import Preview from './pages/Preview';
 
 function App() {
+  const initialize = useAuthStore((state) => state.initialize);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
   return (
     <ThemeProvider>
       <Router>
@@ -17,8 +26,30 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/builder" element={<ResumeBuilder />} />
-            <Route path="/preview/:id" element={<Preview />} />
+            <Route
+              path="/builder"
+              element={
+                <ProtectedRoute>
+                  <ResumeBuilder />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/builder/:id"
+              element={
+                <ProtectedRoute>
+                  <ResumeBuilder />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/preview/:id"
+              element={
+                <ProtectedRoute>
+                  <Preview />
+                </ProtectedRoute>
+              }
+            />
           </Routes>
         </div>
       </Router>
