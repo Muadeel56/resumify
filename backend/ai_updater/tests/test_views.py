@@ -1,20 +1,17 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import override_settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from ai_updater.utils.ai_client import GeminiParseError
+from ai_updater.tests.fixtures import make_corrupt_pdf, make_sample_pdf
 
 User = get_user_model()
 
-UPDATE_URL = "/api/ai/update-resume/"
+UPDATE_URL = "/api/ai-updater/update/"
 
-SAMPLE_PAYLOAD = {
-    "resume_text": "John Doe\nSoftware Engineer at Acme Corp",
-    "instructions": "Change title to Senior Software Engineer",
-}
+SAMPLE_INSTRUCTIONS = "Change title to Senior Software Engineer"
 
 SAMPLE_RESULT = {
     "updated_resume": {
@@ -38,8 +35,18 @@ SAMPLE_RESULT = {
     "changes_made": ["Updated position title to Senior Software Engineer"],
 }
 
+EXTRACTED_RESUME_TEXT = "John Doe\nSoftware Engineer at Acme Corp"
 
-class UpdateResumeViewTests(APITestCase):
+
+def make_uploaded_pdf(content: bytes | None = None, name: str = "resume.pdf"):
+    return SimpleUploadedFile(
+        name,
+        content if content is not None else make_sample_pdf(),
+        content_type="application/pdf",
+    )
+
+
+class AIResumeUpdateViewTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="testuser",
@@ -47,33 +54,107 @@ class UpdateResumeViewTests(APITestCase):
             password="testpass123",
         )
 
+    def _post_update(self, data):
+        return self.client.post(UPDATE_URL, data, format="multipart")
+
     def test_unauthenticated_returns_401(self):
-        response = self.client.post(UPDATE_URL, SAMPLE_PAYLOAD, format="json")
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_missing_fields_returns_400(self):
+    def test_missing_file_returns_400(self):
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(UPDATE_URL, {}, format="json")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("resume_text", response.data)
-        self.assertIn("instructions", response.data)
+        response = self._post_update({"instructions": SAMPLE_INSTRUCTIONS})
 
-    def test_empty_resume_text_returns_400(self):
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "No file uploaded.")
+
+    def test_missing_instructions_returns_400(self):
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(
-            UPDATE_URL,
-            {"resume_text": "", "instructions": "Fix grammar"},
-            format="json",
+        response = self._post_update({"file": make_uploaded_pdf()})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "Please describe what changes you want.")
+
+    def test_blank_instructions_returns_400(self):
+        self.client.force_authenticate(user=self.user)
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(),
+                "instructions": "   ",
+            }
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @override_settings(GEMINI_API_KEY="test-key")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "Please describe what changes you want.")
+
+    def test_file_too_large_returns_400(self):
+        self.client.force_authenticate(user=self.user)
+        oversized = b"x" * (5 * 1024 * 1024 + 1)
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(oversized),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "File too large. Maximum size is 5MB.")
+
+    def test_unsupported_extension_returns_400(self):
+        self.client.force_authenticate(user=self.user)
+        response = self._post_update(
+            {
+                "file": SimpleUploadedFile(
+                    "resume.txt",
+                    b"plain text resume",
+                    content_type="text/plain",
+                ),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "Only PDF and DOCX files are supported.")
+
     @patch("ai_updater.views.update_resume_with_ai")
-    def test_success_returns_200(self, mock_update):
+    @patch("ai_updater.views.extract_resume_text")
+    def test_empty_extracted_text_returns_400(self, mock_extract, mock_update):
+        mock_extract.return_value = ""
+        self.client.force_authenticate(user=self.user)
+
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["error"],
+            "Could not extract text from the file. "
+            "Make sure your PDF is not scanned/image-based.",
+        )
+        mock_update.assert_not_called()
+
+    @patch("ai_updater.views.update_resume_with_ai")
+    @patch("ai_updater.views.extract_resume_text")
+    def test_success_returns_200(self, mock_extract, mock_update):
+        mock_extract.return_value = EXTRACTED_RESUME_TEXT
         mock_update.return_value = SAMPLE_RESULT
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.post(UPDATE_URL, SAMPLE_PAYLOAD, format="json")
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["updated_resume"]["fullName"], "John Doe")
@@ -81,30 +162,39 @@ class UpdateResumeViewTests(APITestCase):
             response.data["changes_made"],
             ["Updated position title to Senior Software Engineer"],
         )
-        mock_update.assert_called_once_with(
-            SAMPLE_PAYLOAD["resume_text"],
-            SAMPLE_PAYLOAD["instructions"],
-        )
+        mock_extract.assert_called_once()
+        mock_update.assert_called_once_with(EXTRACTED_RESUME_TEXT, SAMPLE_INSTRUCTIONS)
 
-    @override_settings(GEMINI_API_KEY="")
-    def test_missing_api_key_returns_503(self):
-        self.client.force_authenticate(user=self.user)
-        response = self.client.post(UPDATE_URL, SAMPLE_PAYLOAD, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
-        self.assertEqual(response.data["detail"], "AI service is not configured.")
-        self.assertNotIn("AIza", str(response.data))
-
-    @override_settings(GEMINI_API_KEY="test-key")
     @patch("ai_updater.views.update_resume_with_ai")
-    def test_parse_error_returns_502(self, mock_update):
-        mock_update.side_effect = GeminiParseError("AI returned an invalid response.")
+    @patch("ai_updater.views.extract_resume_text")
+    def test_parser_value_error_returns_400(self, mock_extract, mock_update):
+        mock_extract.side_effect = ValueError("Could not parse PDF: corrupt file.")
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.post(UPDATE_URL, SAMPLE_PAYLOAD, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
-        self.assertEqual(
-            response.data["detail"],
-            "AI returned an invalid response. Please try again.",
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(make_corrupt_pdf()),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
         )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "Could not parse PDF: corrupt file.")
+        mock_update.assert_not_called()
+
+    @patch("ai_updater.views.update_resume_with_ai")
+    @patch("ai_updater.views.extract_resume_text")
+    def test_ai_failure_returns_500(self, mock_extract, mock_update):
+        mock_extract.return_value = EXTRACTED_RESUME_TEXT
+        mock_update.side_effect = RuntimeError("Gemini unavailable")
+        self.client.force_authenticate(user=self.user)
+
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["error"], "AI processing failed. Please try again.")
