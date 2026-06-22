@@ -1,6 +1,6 @@
 # Resumify
 
-A full-stack Resume Generator platform with modern UI, backend APIs, and future AI features.
+A full-stack Resume Generator platform with modern UI, backend APIs, and AI-powered resume updates.
 
 ## Tech Stack
 
@@ -27,6 +27,7 @@ resumify/
 │   ├── resumify_backend/  # Django project settings
 │   ├── users/            # User management app
 │   ├── resumes/          # Resume CRUD app
+│   ├── ai_updater/       # AI resume update (Gemini)
 │   └── requirements.txt
 └── README.md
 ```
@@ -85,6 +86,10 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
+7. Configure environment variables (copy `backend/.env.example` to `backend/.env`):
+   - `GEMINI_API_KEY` — required for the AI Resume Updater (`/ai-updater`)
+   - `GEMINI_MODEL` — optional, defaults to `gemini-flash-latest`
+
 ## Running the Application
 
 ### Frontend
@@ -119,6 +124,9 @@ The backend API will be available at `http://localhost:8000`
 - `DELETE /api/resumes/:id/` - Delete a resume
 - `GET /api/my-resumes/` - Get all resumes for current user
 
+### AI Resume Updater
+- `POST /api/ai-updater/update/` - Update a resume with AI (authenticated, multipart: `file`, `instructions`, optional `supporting_file`; PDF/DOCX, max 5MB each)
+
 ## Frontend Pages
 
 - `/` - Home page
@@ -126,6 +134,7 @@ The backend API will be available at `http://localhost:8000`
 - `/register` - Registration page
 - `/builder` - Resume builder page
 - `/preview/:id` - Resume preview page
+- `/ai-updater` - AI Resume Updater (authenticated)
 
 ## Development Notes
 
@@ -136,11 +145,8 @@ The backend API will be available at `http://localhost:8000`
 
 ## Next Steps
 
-- Implement full resume form functionality
-- Add PDF generation
-- Implement user authentication on frontend
-- Add AI features for resume enhancement
 - Add resume templates
+- Add DOCX export for AI-updated resumes
 
 ## License
 

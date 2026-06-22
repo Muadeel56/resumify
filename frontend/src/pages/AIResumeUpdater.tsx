@@ -144,7 +144,6 @@ const AIResumeUpdater = () => {
 
   const handleDownloadPdf = () => {
     if (!updatedResume) return;
-    setError('');
     try {
       downloadResumePdf();
     } catch (err) {
