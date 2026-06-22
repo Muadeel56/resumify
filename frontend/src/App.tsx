@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ResumeBuilder from './pages/ResumeBuilder';
 import Preview from './pages/Preview';
+import AIResumeUpdater from './pages/AIResumeUpdater';
 
 function App() {
   const initialize = useAuthStore((state) => state.initialize);
@@ -47,6 +48,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Preview />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/ai-updater"
+              element={
+                <ProtectedRoute>
+                  <AIResumeUpdater />
                 </ProtectedRoute>
               }
             />

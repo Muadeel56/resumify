@@ -13,12 +13,18 @@ const Home = () => {
             Build beautiful, ATS-friendly resumes with our easy-to-use resume builder.
             No design skills required.
           </p>
-          <div className="flex justify-center space-x-4">
+          <div className="flex justify-center flex-wrap gap-4">
             <Link
               to="/builder"
               className="bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Start Building
+            </Link>
+            <Link
+              to="/ai-updater"
+              className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-semibold border-2 border-blue-600 hover:bg-blue-50 transition-colors"
+            >
+              Update with AI
             </Link>
             <Link
               to="/login"

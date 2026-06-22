@@ -89,11 +89,15 @@ export async function updateResume(
 
 export async function updateResumeWithAI(
   file: File,
-  instructions: string
+  instructions: string,
+  supportingFile?: File | null
 ): Promise<AIUpdateResult> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('instructions', instructions);
+  if (supportingFile) {
+    formData.append('supporting_file', supportingFile);
+  }
 
   const response = await api.post<AIUpdateResult>('/ai-updater/update/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

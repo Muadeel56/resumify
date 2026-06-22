@@ -5,3 +5,56 @@
     @apply bg-gray-50 text-gray-900;
   }
 }
+
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0;
+  }
+
+  nav,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide everything on the page … */
+  body * {
+    visibility: hidden;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* … then reveal only the resume element and its children */
+  #resume-preview-print,
+  #resume-preview-print * {
+    visibility: visible;
+  }
+
+  #resume-preview-print {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 0.5in !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+
+  .resume-section-line {
+    border-top: 2px solid #111827 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

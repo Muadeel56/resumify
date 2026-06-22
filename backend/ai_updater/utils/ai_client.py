@@ -8,8 +8,6 @@ import google.generativeai as genai
 from django.conf import settings
 from google.api_core import exceptions as google_exceptions
 
-MODEL_NAME = "gemini-2.0-flash"
-
 SYSTEM_PROMPT = """You are a professional resume editor. Your task is to parse plain-text resume content into structured JSON and apply the user's requested changes.
 
 RULES:
@@ -17,6 +15,11 @@ RULES:
 {
   "fullName": "string",
   "profileSummary": "string",
+  "contact": {
+    "phone": "string",
+    "email": "string",
+    "location": "string"
+  },
   "experience": [
     {
       "id": "string (UUID, optional)",
@@ -34,7 +37,8 @@ RULES:
       "degree": "string",
       "field": "string",
       "startDate": "string",
-      "endDate": "string"
+      "endDate": "string",
+      "grade": "string (optional)"
     }
   ],
   "skills": ["string"],
@@ -52,9 +56,12 @@ RULES:
       "issuer": "string",
       "date": "string"
     }
-  ]
+  ],
+  "extracurricular": ["string"]
 }
-2. Apply ONLY the changes the user requests. NEVER invent experience, skills, education, languages, or certifications not present in the source text.
+2. The resume text may come from a multi-column PDF and appear out of order. Reconstruct logical sections (Contact, Profile, Work Experience, Education, Skills, Languages, Certifications/Training, Extracurricular) from context.
+3. The resume text may include two blocks: a PRIMARY RESUME and an optional SUPPORTING DOCUMENT. If a supporting document is present, use it only to add missing facts (e.g. internship company, title, dates) and do not remove existing resume content.
+4. Apply ONLY the changes the user requests. NEVER invent experience, skills, education, languages, certifications, or extracurricular items not present in the source text.
 3. Fix grammar and spelling errors across all sections automatically.
 4. Preserve all factual content from the original resume unless the user explicitly asks to change it.
 5. After the JSON object, on a new line, write CHANGES: followed by a human-readable bullet list of every change you made (one change per line, prefixed with "- ").
@@ -66,7 +73,7 @@ CHANGES:
 - Fixed grammar in profile summary
 """
 
-_configured = False
+_configured_key: str | None = None
 
 
 class GeminiConfigError(Exception):
@@ -86,12 +93,31 @@ class InvalidInputError(Exception):
 
 
 def _ensure_configured() -> None:
-    global _configured
+    global _configured_key
     if not settings.GEMINI_API_KEY:
-        raise GeminiConfigError("AI service is not configured.")
-    if not _configured:
+        raise GeminiConfigError(
+            "AI service is not configured. Set GEMINI_API_KEY in backend/.env."
+        )
+    if _configured_key != settings.GEMINI_API_KEY:
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        _configured = True
+        _configured_key = settings.GEMINI_API_KEY
+
+
+def _map_google_api_error(exc: google_exceptions.GoogleAPIError) -> str:
+    if isinstance(exc, google_exceptions.PermissionDenied):
+        return (
+            "The AI API key is invalid or has been revoked. "
+            "Generate a new key at https://aistudio.google.com/apikey "
+            "and update GEMINI_API_KEY in backend/.env."
+        )
+    if isinstance(exc, google_exceptions.ResourceExhausted):
+        return "AI service quota exceeded. Please try again later."
+    if isinstance(exc, google_exceptions.NotFound):
+        return (
+            f"The configured AI model ({settings.GEMINI_MODEL}) is not available. "
+            "Set GEMINI_MODEL in backend/.env to a supported model."
+        )
+    return "AI service is temporarily unavailable. Please try again."
 
 
 def _strip_json_fences(text: str) -> str:
@@ -148,6 +174,30 @@ def _ensure_ids(resume_data: dict) -> dict:
     return resume_data
 
 
+def _normalize_resume_data(resume_data: dict) -> dict:
+    if not isinstance(resume_data, dict):
+        return {}
+
+    resume_data.setdefault("fullName", "")
+    resume_data.setdefault("profileSummary", "")
+    resume_data.setdefault("experience", [])
+    resume_data.setdefault("education", [])
+    resume_data.setdefault("skills", [])
+    resume_data.setdefault("languages", [])
+    resume_data.setdefault("certifications", [])
+    resume_data.setdefault("extracurricular", [])
+
+    contact = resume_data.get("contact")
+    if not isinstance(contact, dict):
+        contact = {}
+    contact.setdefault("phone", "")
+    contact.setdefault("email", "")
+    contact.setdefault("location", "")
+    resume_data["contact"] = contact
+
+    return resume_data
+
+
 def update_resume_with_ai(resume_text: str, instructions: str) -> dict:
     """Parse resume text, apply user instructions via Gemini, return structured result."""
     if not resume_text or not resume_text.strip():
@@ -163,11 +213,14 @@ def update_resume_with_ai(resume_text: str, instructions: str) -> dict:
     )
 
     try:
-        model = genai.GenerativeModel(MODEL_NAME, system_instruction=SYSTEM_PROMPT)
+        model = genai.GenerativeModel(
+            settings.GEMINI_MODEL,
+            system_instruction=SYSTEM_PROMPT,
+        )
         response = model.generate_content(user_prompt)
         response_text = response.text
     except google_exceptions.GoogleAPIError as exc:
-        raise GeminiAPIError("AI service is temporarily unavailable. Please try again.") from exc
+        raise GeminiAPIError(_map_google_api_error(exc)) from exc
     except Exception as exc:
         raise GeminiAPIError("AI service is temporarily unavailable. Please try again.") from exc
 
@@ -175,6 +228,7 @@ def update_resume_with_ai(resume_text: str, instructions: str) -> dict:
         raise GeminiParseError("AI returned an empty response.")
 
     resume_data, changes = _parse_gemini_response(response_text)
+    resume_data = _normalize_resume_data(resume_data)
     resume_data = _ensure_ids(resume_data)
 
     return {"updated_resume": resume_data, "changes_made": changes}

@@ -9,11 +9,13 @@ import { createResume, getApiErrorMessage, getResume, updateResume } from '../ut
 const emptyResume = (): Resume => ({
   fullName: '',
   profileSummary: '',
+  contact: { phone: '', email: '', location: '' },
   experience: [],
   education: [],
   skills: [],
   languages: [],
   certifications: [],
+  extracurricular: [],
 });
 
 const ResumeBuilder = () => {
