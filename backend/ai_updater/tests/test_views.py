@@ -167,6 +167,28 @@ class AIResumeUpdateViewTests(APITestCase):
 
     @patch("ai_updater.views.update_resume_with_ai")
     @patch("ai_updater.views.extract_resume_text")
+    def test_supporting_file_passed_to_ai(self, mock_extract, mock_update):
+        mock_extract.side_effect = [EXTRACTED_RESUME_TEXT, "supporting doc text"]
+        mock_update.return_value = SAMPLE_RESULT
+        self.client.force_authenticate(user=self.user)
+
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(name="resume.pdf"),
+                "supporting_file": make_uploaded_pdf(name="support.pdf"),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(mock_extract.call_count, 2)
+        mock_update.assert_called_once()
+        combined_text = mock_update.call_args.args[0]
+        self.assertIn("PRIMARY RESUME:", combined_text)
+        self.assertIn("SUPPORTING DOCUMENT:", combined_text)
+
+    @patch("ai_updater.views.update_resume_with_ai")
+    @patch("ai_updater.views.extract_resume_text")
     def test_parser_value_error_returns_400(self, mock_extract, mock_update):
         mock_extract.side_effect = ValueError("Could not parse PDF: corrupt file.")
         self.client.force_authenticate(user=self.user)
@@ -198,3 +220,22 @@ class AIResumeUpdateViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data["error"], "AI processing failed. Please try again.")
+
+    @patch("ai_updater.views.update_resume_with_ai")
+    @patch("ai_updater.views.extract_resume_text")
+    def test_gemini_api_error_returns_503(self, mock_extract, mock_update):
+        from ai_updater.utils.ai_client import GeminiAPIError
+
+        mock_extract.return_value = EXTRACTED_RESUME_TEXT
+        mock_update.side_effect = GeminiAPIError("The AI API key is invalid or has been revoked.")
+        self.client.force_authenticate(user=self.user)
+
+        response = self._post_update(
+            {
+                "file": make_uploaded_pdf(),
+                "instructions": SAMPLE_INSTRUCTIONS,
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertIn("invalid or has been revoked", response.data["error"])

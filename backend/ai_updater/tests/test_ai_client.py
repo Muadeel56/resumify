@@ -1,12 +1,15 @@
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
+from google.api_core import exceptions as google_exceptions
 
 from ai_updater.utils.ai_client import (
+    GeminiAPIError,
     GeminiConfigError,
     GeminiParseError,
     InvalidInputError,
     _ensure_ids,
+    _map_google_api_error,
     _parse_gemini_response,
     update_resume_with_ai,
 )
@@ -200,3 +203,39 @@ class UpdateResumeWithAiTests(SimpleTestCase):
     def test_empty_instructions_raises_invalid_input(self):
         with self.assertRaises(InvalidInputError):
             update_resume_with_ai(self.resume_text, "   ")
+
+    @override_settings(GEMINI_API_KEY="test-key", GEMINI_MODEL="gemini-2.0-flash")
+    @patch("ai_updater.utils.ai_client.genai.GenerativeModel")
+    def test_permission_denied_raises_api_error(self, mock_model_cls):
+        mock_model_cls.return_value.generate_content.side_effect = (
+            google_exceptions.PermissionDenied("API key revoked")
+        )
+
+        with self.assertRaises(GeminiAPIError) as ctx:
+            update_resume_with_ai(self.resume_text, self.instructions)
+
+        self.assertIn("invalid or has been revoked", str(ctx.exception))
+
+    @override_settings(GEMINI_API_KEY="test-key", GEMINI_MODEL="gemini-2.0-flash")
+    @patch("ai_updater.utils.ai_client.genai.GenerativeModel")
+    def test_quota_exceeded_raises_api_error(self, mock_model_cls):
+        mock_model_cls.return_value.generate_content.side_effect = (
+            google_exceptions.ResourceExhausted("quota exceeded")
+        )
+
+        with self.assertRaises(GeminiAPIError) as ctx:
+            update_resume_with_ai(self.resume_text, self.instructions)
+
+        self.assertIn("quota exceeded", str(ctx.exception).lower())
+
+
+class MapGoogleApiErrorTests(SimpleTestCase):
+    @override_settings(GEMINI_MODEL="gemini-2.0-flash")
+    def test_permission_denied_message(self):
+        msg = _map_google_api_error(google_exceptions.PermissionDenied("denied"))
+        self.assertIn("invalid or has been revoked", msg)
+
+    @override_settings(GEMINI_MODEL="gemini-2.0-flash")
+    def test_resource_exhausted_message(self):
+        msg = _map_google_api_error(google_exceptions.ResourceExhausted("quota"))
+        self.assertIn("quota exceeded", msg.lower())

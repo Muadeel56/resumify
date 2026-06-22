@@ -2,11 +2,19 @@ export type Resume = {
   id?: number;
   fullName: string;
   profileSummary: string;
+  contact: Contact;
   experience: Experience[];
   education: Education[];
   skills: string[];
   languages: Language[];
   certifications: Certification[];
+  extracurricular: string[];
+};
+
+export type Contact = {
+  phone: string;
+  email: string;
+  location: string;
 };
 
 export type Experience = {
@@ -25,6 +33,7 @@ export type Education = {
   field: string;
   startDate: string;
   endDate: string;
+  grade?: string;
 };
 
 export type Language = {

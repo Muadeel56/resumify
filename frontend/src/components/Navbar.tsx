@@ -13,12 +13,20 @@ const Navbar = () => {
               Resumify
             </Link>
             {isAuthenticated && (
-              <Link
-                to="/builder"
-                className="text-gray-700 hover:text-gray-900 text-sm font-medium"
-              >
-                Builder
-              </Link>
+              <>
+                <Link
+                  to="/builder"
+                  className="text-gray-700 hover:text-gray-900 text-sm font-medium"
+                >
+                  Builder
+                </Link>
+                <Link
+                  to="/ai-updater"
+                  className="text-gray-700 hover:text-gray-900 text-sm font-medium"
+                >
+                  AI Updater
+                </Link>
+              </>
             )}
           </div>
           <div className="flex items-center space-x-4">
