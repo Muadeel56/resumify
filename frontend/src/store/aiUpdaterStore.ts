@@ -36,7 +36,11 @@ export const useAIUpdaterStore = create<AIUpdaterState>((set) => ({
   setProcessing: () => set({ status: 'processing', error: null }),
   setResult: (resume, changes) =>
     set({ status: 'done', updatedResume: resume, changesMade: changes }),
-  setError: (message) => set({ status: 'error', error: message }),
+  setError: (message) =>
+    set((state) => ({
+      error: message || null,
+      ...(state.status !== 'done' && message ? { status: 'error' as const } : {}),
+    })),
   reset: () =>
     set({
       status: 'idle',
